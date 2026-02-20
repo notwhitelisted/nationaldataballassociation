@@ -83,3 +83,194 @@ def _abbr_to_team_id(abbr: str) -> int:
     #convert abbreviation to team_id, with normalization
     normalized = _normalize_abbr(abbr)
     return _ABBR_TO_ID.get(normalized, 0)
+
+class BBRefCollector:
+    """
+    collects NBA data from basketball-reference.com
+    attributes:
+        delay: seconds to wait between requests to avoid rate-limiting
+    """
+    BASE_URL = "https://www.basketball-reference.com"
+
+    def __init__(self, delay: float = 3.0):
+        self.delay = delay
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/91.0.4472.124 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en:q=0.9",
+            "Referer": self.BASE_URL,
+        })
+
+    def _sleep(self) -> None:
+        #rate limit pause between requests
+        time.sleep(self.delay)
+    
+    def _fetch_page(self, url: str) -> BeautifulSoup:
+        #fetch webpage and return pased BeautifulSoup object
+        logger.debug("Fetching: {}", url)
+        response = self.session.get(url, timeout=30)
+        response.raise_for_status()
+        return BeautifulSoup(response.content, "html.parser")
+    
+    #teams (static, no HTTP)
+    def get_all_teams(self) -> list[Team]:
+        #return all 30 NBA teams from static data
+        teams = [Team(**t) for t in BBREF_TEAMS]
+        logger.info("Loaded {} teams from static data", len(teams))
+        return teams
+    
+    #season games
+    def get_season_games(self, season: int) -> list[Game]:
+        """
+        fetch all games for a season from basketball-reference.com
+        
+        scrapes monthly schedule pages for given season
+        basketball reference organizes schedules by month:
+            /leagues/NBA_2025_games-<month>.html 
+        
+        Args: season - start year of season (e.g. 2024 for 2024-25)
+
+        Returns: list of Game objects 
+        """
+        bbref_year = season + 1 #bbref uses end year for season pages
+        months = ["october", "november", "december", "january", "february", "march", "april", "may", "june"]
+
+        all_games = list[Game] = []
+
+        for month in months:
+            url = f"{self.BASE_URL}/leagues/NBA_{bbref_year}_games-{month}.html"
+            self.sleep()
+
+            try:
+                soup = self._fetch_page(url)
+                games = self._parse_schedule_page(soup, season)
+                all_games.extend(games)
+                logger.info(
+                    "Season {} - {}: {} games found",
+                    settings.season_string(season),
+                    month.capitalize(),
+                    len(games),
+                )
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code == 404:
+                    #month doesn't exist yet (future months in current season)
+                    logger.deug("No schedule page for {} {}", season, month)
+                    continue
+                else:
+                    logger.error("HTTP error fetching {} {}: {}", season, month, e)
+                    raise
+            except Exception as e:
+                logger.error("Error fetching {} {}: {}", season, month, e)
+                continue
+        
+        logger.info(
+            "Total games collected for season {}: {}",
+            settings.season_string(season),
+            len(all_games),
+        )
+        return all_games 
+    
+    def _parse_schedule_page(self, soup: BeautifulSoup, season: int) -> list[Game]:
+        #parse monthly schedule page into Game objects
+
+        #the schedule table has columns: Date, Start (ET), Visitor/Neutral, PTS, Home/Neutral, PTS, etc...)
+        table = soup.find("table", id="schedule")
+        if table is None:
+            return []
+        
+        games = []
+        tbody = table.find("tbody")
+        if tbody is None:
+            return []
+        
+        for row in tbody.find_all("tr"):
+            #skip header rows within tbody
+            if row.find("th", {"scope": "col"}):
+                continue
+
+            cells = row.find_all(["th", "td"])
+            if len(cells) < 6:
+                continue
+
+            try:
+                #parse date
+                date_cell = row.find("th", {"data-stat": "date_game"})
+                if date_cell is None:
+                    continue
+                date_link = date_cell.find("a")
+                if date_link is None:
+                    continue
+                date_text = date_link.text.strip()
+
+                #bbref date format: "Fri, Oct 22, 2024" 
+                game_date = self._parse_bbref_date(date_text)
+                if game_date is None:
+                    continue
+
+                #parse teams
+                away_cell = row.find("td", {"data-stat": "visitor_team_name"})
+                home_cell = row.find("td", {"data-stat": "home_team_name"})
+                if away_cell is None or home_cell is None:
+                    continue
+
+                away_link = away_cell.find("a")
+                home_link = home_cell.find("a")
+                if away_link is None or home_link is None:
+                    continue
+
+                #extract abbreviation from the link href
+                #e.g. /teams/LAL/2025.html -> LAL
+                away_abbr = self._extract_team_abbr(away_link.get("href", ""))
+                home_abbr = self._extract_team_abbr(home_link.get("href", ""))
+
+                if not away_abbr or not home_abbr:
+                    continue
+
+                #parse scores
+                away_score_cell = row.find("td", {"data-stat": "visitor_pts"})
+                home_score_cell = row.find("td", {"data-stat": "home_pts"})
+
+                if away_score_cell is None or home_score_cell is None:
+                    continue
+
+                away_score_text = away_score_cell.text.strip()
+                home_score_text = home_score_cell.text.strip()
+
+                #skip games that haven't been played yet (no score)
+                if not away_score_text or not home_score_text:
+                    continue
+
+                away_score = int(away_score_text)
+                home_score = int(home_score_text)
+
+                #nuild game ID from date + teams (bbref doesn't have numeric IDs)
+                game_id = f"{game_date.isoformat()}_{home_abbr}_{away_abbr}"
+
+                #normalize abbreviations
+                home_abbr_norm = _normalize_abbr(home_abbr)
+                away_abbr_norm = _normalize_abbr(away_abbr)
+
+                game = Game(
+                    game_id=game_id,
+                    season=season,
+                    game_date=game_date,
+                    home_team_id=_abbr_to_team_id(home_abbr),
+                    away_team_id=_abbr_to_team_id(away_abbr),
+                    home_team_abbr=home_abbr_norm,
+                    away_team_abbr=away_abbr_norm,
+                    home_score=home_score,
+                    away_score=away_score,
+                    home_win=home_score > away_score,
+                )
+                games.append(game)
+
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.debug("Error parsing game row: {}", e)
+                continue
+
+        return games
