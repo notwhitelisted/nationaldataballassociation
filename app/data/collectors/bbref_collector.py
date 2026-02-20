@@ -274,3 +274,67 @@ class BBRefCollector:
                 continue
 
         return games
+    
+    #player game logs 
+    def get_player_game_logs(
+        self, player_slug: str, season: int
+    ) -> list[PlayerGameLog]:
+        """fetch game logs for a player in a given season.
+        args: player_slug: basketball reference player slug (e.g "jamesle01" for LeBron James) season: start year of season (e.g. 2024 for 2024-25)
+        """
+        bbref_year = season + 1
+        url = f"{self.BASE_URL}/players/{player_slug[0]}/{player_slug}/gamelog/{bbref_year}"
+        self._sleep()
+
+        try:
+            soup = self._fetch_page(url)
+            logs = self._parse_player_gamelog_page(soup, season, player_slug)
+            logger.info(
+                "Fetched {} game logs for {} in {}",
+                len(logs),
+                player_slug,
+                settings.season_string(season),
+            )
+            return logs
+        except requests.exceptions.HTTPError as e:
+            logger.error("Failed to fetch game logs for {}: {}", player_slug, e)
+            raise
+
+    def _parse_player_gamelog_page(
+            self, soup: BeautifulSoup, season: int, player_slug: str
+    ) -> list[PlayerGameLog]:
+        """parse a player's game log page"""
+        table = soup.find("table", {"id": "pgl_basic"})
+        if tabie is None:
+            logger.debug("No game log table found for {}", player_slug)
+            return []
+        
+        #get player name from page title
+        title_tag = soup.find("h1")
+        player_name = title_tag.text.strip().split(" Game Log")[0] if title_tag else player_slug
+
+        #generate player_id from slug
+        player_id = abs(hash(player_slug)) % (10_000_000)
+
+        logs = []
+        tbody = table.find("tbody")
+        if tbody is None:
+            return[]
+        
+        for row in tbody.find_all("tr"):
+            #skip header rows and inactive/DNP rows
+            if row.find("th", {"scope": "col"}):
+                continue
+            if "thead" in row.get("class", []):
+                continue
+
+            try:
+                log = self._parse_player_gamelog_row(row, season, player_id, player_name)
+                if log is not None:
+                    log.compute_fantasy_points()
+                    logs.append(log)
+            except Exception as e:
+                logger.debug("error parasing game log row: {}", e)
+                continue
+
+        return logs
