@@ -338,3 +338,144 @@ class BBRefCollector:
                 continue
 
         return logs
+    
+    def _parse_player_gamelog_row(
+        self,
+        row,
+        season: int,
+        player_id: int,
+        player_name: str,
+    ) -> PlayerGameLog | None:
+        
+        """
+        parse a single row from player game log table
+        """
+
+        def _stat(data_stat:str, default=0) -> str:
+            cell = row.find("td", {"data-stat": data_stat})
+            if cell is None:
+                return default
+            text = cell.text.strip()
+            return text if text else default
+        
+        #check if player is DNP/inactive
+        reason = _stat("reason")
+        if reason and reason != "0":
+            return None #dnp, inactive, etc.
+        
+        #date
+        date_cell = row.find("th", {"data-stat": "date_game"})
+        if date_cell is None:
+            return None
+        date_link = date_cell.find("a")
+        if date_link is None:
+            return None
+        game_date = self._parse_bbref_date(date_link.text.strip())
+        if game_date is None:
+            href = date_link.get("href", "")
+            date_match = re.search(r"(\d{4}-\d{2}-\d{2})", href)
+            if date_match:
+                game_date = date.fromisoformat(date_match.group(1))
+            else:
+                return None
+            
+        #team
+        team_abbr = _stat("team_id")
+        team_abbr_norm = _normalize_abbr(team_abbr)
+
+        #opponent and home/away
+        opp_abbr = _stat("opp_id")
+        game_location = _stat("game_location")
+        is_home = game_location != "@"
+
+        #build game_id consistent with schedule format
+        if is_home:
+            game_id = f"{game_date.isoformat()}_{team_abbr_norm}_{_normalize_abbr(opp_abbr)}"
+        else:
+            game_id = f"{game_date.isoformat()}_{_normalize_abbr(opp_abbr)}_{team_abbr_norm}"
+
+        #minutes
+        minutes = self._parse_minutes(_stat("mp", "0"))
+        if minutes == 0:
+            return None #didn't play
+        
+        #stats
+        return PlayerGameLog(
+            player_id=player_id,
+            player_name=player_name,
+            team_id=_abbr_to_team_id(team_abbr),
+            team_abbr=team_abbr_norm,
+            game_id=game_id,
+            game_date=game_date,
+            season=season,
+            minutes=minutes,
+            points=int(_stat("pts", 0)),
+            fgm=int(_stat("fg", 0)),
+            fga=int(_stat("fga", 0)),
+            fg_pct=float(_stat("fg_pct", 0)),
+            fg3m=int(_stat("fg3", 0)),
+            fg3a=int(_stat("fg3a", 0)),
+            fg3_pct=float(_stat("fg3_pct", 0)),
+            ftm=int(_stat("ft", 0)),
+            fta=int(_stat("fta", 0)),
+            ft_pct=float(_stat("ft_pct", 0)),
+            oreb=int(_stat("orb", 0)),
+            dreb=int(_stat("drb", 0)),
+            reb=int(_stat("trb", 0)),
+            ast=int(_stat("ast", 0)),
+            stl=int(_stat("stl", 0)),
+            blk=int(_stat("blk", 0)),
+            tov=int(_stat("tov", 0)),
+            pf=int(_stat("pf", 0)),
+            plus_minus=float(_stat("plus_minus", 0)),
+        )
+        
+    #roster/player directory
+    def get_team_roster(self, team_abbr: str, season: int) -> list[dict]:
+        """
+        fetch a team's roster to discover player slugs
+
+        args: 
+            team_abbr: team abbreviation (e.g. "LAL")
+            season: start year of the season
+
+        returns: list of dictionaries with player_name and player_slug
+        """
+
+        bbref_year = season + 1
+        normalized = _normalize_abbr(team_abbr)
+        url = f"{self.BASE_URL}/teams/{normalized}/{bbref_year}.html"
+        
+        self._sleep()
+        soup = self._fetch_page(url)
+
+        table = soup.find("table", {"id": "roster"})
+        if table is None:
+            logger.debug("No roster table found for {} in {}", team_abbr, season)
+            return []
+        
+        players = []
+        tbody = table.find("tbody")
+        if tbody is None:
+            return []
+        
+        for row in tbody.find_all("tr"):
+            player_cell = row.find("th", {"data-stat": "player"})
+            if player_cell is None:
+                continue
+            link = player_cell.find("a")
+            if link is None:
+                continue
+
+            name = link.text.strip()
+            href = link.get("href", "")
+            #extract slug from href, e.g. /players/j/jamesle01.html
+            slug_match = re.search(r"/players/./(.*)\.html", href)
+            if slug_match:
+                players.append({
+                    "player_name": name,
+                    "player_slug": slug_match.group(1),
+                })
+
+        logger.info("Found {} players on {} roster for {}", len(players), team_abbr)
+        return players 
