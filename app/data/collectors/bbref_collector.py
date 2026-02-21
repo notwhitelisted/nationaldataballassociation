@@ -27,7 +27,7 @@ from app.models import Game, Player, PlayerGameLog, Team
 from app.utils import logger
 
 #static team data
-BBREF_TEAMS = {
+BBREF_TEAMS = [
     {"team_id": 1, "abbreviation": "ATL", "full_name": "Atlanta Hawks", "nickname": "Hawks", "city": "Atlanta", "state": "Georgia", "year_founded": 1949},
     {"team_id": 2, "abbreviation": "BOS", "full_name": "Boston Celtics", "nickname": "Celtics", "city": "Boston", "state": "Massachusetts", "year_founded": 1946},
     {"team_id": 3, "abbreviation": "BRK", "full_name": "Brooklyn Nets", "nickname": "Nets", "city": "Brooklyn", "state": "New York", "year_founded": 1976},
@@ -58,7 +58,7 @@ BBREF_TEAMS = {
     {"team_id": 28, "abbreviation": "TOR", "full_name": "Toronto Raptors", "nickname": "Raptors", "city": "Toronto", "state": "Ontario", "year_founded": 1995},
     {"team_id": 29, "abbreviation": "UTA", "full_name": "Utah Jazz", "nickname": "Jazz", "city": "Salt Lake City", "state": "Utah", "year_founded": 1974},
     {"team_id": 30, "abbreviation": "WAS", "full_name": "Washington Wizards", "nickname": "Wizards", "city": "Washington", "state": "District of Columbia", "year_founded": 1961},
-}
+]
 
 #map bbref team abbreviations to team_id 
 _ABBR_TO_ID = {t["abbreviation"]: t["team_id"] for t in BBREF_TEAMS}
@@ -140,11 +140,11 @@ class BBRefCollector:
         bbref_year = season + 1 #bbref uses end year for season pages
         months = ["october", "november", "december", "january", "february", "march", "april", "may", "june"]
 
-        all_games = list[Game] = []
+        all_games: list[Game] = []
 
         for month in months:
             url = f"{self.BASE_URL}/leagues/NBA_{bbref_year}_games-{month}.html"
-            self.sleep()
+            self._sleep()
 
             try:
                 soup = self._fetch_page(url)
@@ -479,3 +479,116 @@ class BBRefCollector:
 
         logger.info("Found {} players on {} roster for {}", len(players), team_abbr)
         return players 
+    
+    def get_all_season_player_logs(
+        self,
+        season: int,
+        team_abbrs: list[str] | None = None,
+        top_n_per_team: int | None = None,
+    ) -> list[PlayerGameLog]:
+        """
+        fetch game logs for all players acrossm multiple teams
+        
+        args:
+            season: start year of season
+            team_abbrs: team abbreviations to fetch - defaults to all teams
+            top_n_per_team: limit players per team (for testing)
+
+        returns: list of PlayerGameLog objects
+        """
+        if team_abbrs is None:
+            team_abbrs = [t["abbreviation"] for t in BBREF_TEAMS]
+
+        all_logs: list[PlayerGameLog] = []
+        failed: list[str] = []
+
+        for i, abbr in enumerate(team_abbrs):
+            logger.info("Fetching roster for {} ({}/{})", abbr, i + 1, len(team_abbrs))
+            try:
+                roster = self.get_team_roster(team_abbrs)
+                if top_n_per_team:
+                    roster = roster[:top_n_per_team]
+
+                for player in roster:
+                    try: 
+                        logs = self.get_player_game_logs(
+                            player["player_slug"], season
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed for {} ({}): {}", player["player_name"], player["player_slug"], e)
+            except Exception as e:
+                        logger.error("Failed to fetch roster for {}: {}", abbr, e)
+        if failed:
+            logger.warning("{} players failed: {}", len(failed), failed[:10])
+
+        logger.info("Collected {} total player game logs for season {}", len(all_logs), settings.season_string(season))
+        return all_logs
+    
+    #utilities
+    @staticmethod
+    def _parse_bbref_date(date_text: str) -> date | None:
+        """Parse Basketball Reference date formats.
+
+        Handles:
+            "Fri, Oct 22, 2024"
+            "2024-10-22"
+            "Oct 22, 2024"
+        """
+        #clean up extra whitespace
+        date_text = " ".join(date_text.split())
+
+        formats = [
+            "%a, %b %d, %Y",  # "Fri, Oct 22, 2024"
+            "%b %d, %Y",       # "Oct 22, 2024"
+            "%Y-%m-%d",         # "2024-10-22"
+        ]
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_text, fmt).date()
+            except ValueError:
+                continue
+
+        logger.debug("Could not parse date: '{}'", date_text)
+        return None
+
+    @staticmethod
+    def _parse_minutes(raw_min: str) -> float:
+        """parse minutes from bbref format (usually 'MM:SS' or just a number)."""
+        if not raw_min or raw_min == "0":
+            return 0.0
+        if ":" in raw_min:
+            parts = raw_min.split(":")
+            try:
+                return float(parts[0]) + float(parts[1]) / 60.0
+            except (ValueError, IndexError):
+                return 0.0
+        try:
+            return float(raw_min)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @staticmethod
+    def _extract_team_abbr(href: str) -> str:
+        """extract team abbreviation from a bbref link. e.g. "/teams/LAL/2025.html" -> "LAL"
+        """
+        match = re.search(r"/teams/(\w+)/", href)
+        return match.group(1) if match else ""
+
+
+#convenience: well-known player slugs for quick testing
+
+NOTABLE_PLAYERS = {
+    "LeBron James": "jamesle01",
+    "Stephen Curry": "curryst01",
+    "Kevin Durant": "duranke01",
+    "Giannis Antetokounmpo": "anMDangi01",
+    "Nikola Jokic": "jokicni01",
+    "Luka Doncic": "doncilu01",
+    "Joel Embiid": "embiijo01",
+    "Jayson Tatum": "tatumja01",
+    "Shai Gilgeous-Alexander": "gilMDgesh01",
+    "Anthony Edwards": "edMDwaan01",
+}
+                
+                    
