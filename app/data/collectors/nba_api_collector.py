@@ -51,7 +51,7 @@ class NBAApiCollector:
         """Rate-limit pause between API calls."""
         time.sleep(self.delay)
 
-    # ── Static Data (local, no API call) ────────────────────────────────
+    #static data (local)
 
     def get_all_teams(self) -> list[Team]:
         """Return all NBA teams from nba_api static data (no API call)."""
@@ -93,7 +93,7 @@ class NBAApiCollector:
         )
         return players
 
-    # ── Season Games ────────────────────────────────────────────────────
+    #season games
 
     def get_season_games(self, season: int) -> list[Game]:
         """Fetch all regular-season and playoff games for a given season.
@@ -211,7 +211,7 @@ class NBAApiCollector:
 
         return games
 
-    # ── Player Game Logs ────────────────────────────────────────────────
+    #player game logs
 
     def get_player_game_logs(
         self, player_id: int, season: int
@@ -331,7 +331,7 @@ class NBAApiCollector:
         except (ValueError, TypeError):
             return 0.0
 
-    # ── Bulk Collection Helpers ─────────────────────────────────────────
+    #bulk collection helpers 
 
     def get_active_player_ids(self) -> list[int]:
         """Return IDs of all currently active players."""
