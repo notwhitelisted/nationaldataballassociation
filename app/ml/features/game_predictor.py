@@ -55,3 +55,37 @@ class ModelResult:
     #calibration metrics 
     calibration_before: CalibrationResult #uncalibrated
     calibration_after: dict[str, CalibrationResult]  = field(default_factory=dict) #calibrated with different methods
+
+    #best calibration method
+    best_calibration_method: str = None
+    best_ece: float = None
+
+    #raw predictions and probabilities for further analysis
+    y_true: np.ndarray = field(default=None, repr=False)
+    y_prob_uncalibrated: np.ndarray = field(default=None, repr=False)
+    y_prob_calibrated: np.ndarray = field(default=None, repr=False)
+
+    class GamePredictor:
+        #trains and evaluates game outcome prediction models
+        """
+        Main point for ML pipeline to train and evaluate game outcome prediction models. This class will:
+        1. Load and split features temporally to avoid data leakage
+        2. Train multiple models (baseline, logistic regression, random forest, xgboost)
+        3. Apply and compare calibration methods
+        4. Evaluate accuracry and calibration metrics 
+        """
+
+        MODELS = {
+            "logistic_regression": lambda: LogisticRegression(
+                C=1.0, max_iter=1000, random_state=42
+            ),
+            "random_forest": lambda: RandomForestClassifier(
+                n_estimators=200, max_depth=10, min_samples_leaf=20, random_state=42, n_jobs=-1,
+            ),
+            "xgboost": lambda: XGBClassifier(
+                n_estimators=200, max_depth=5, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, min_child_weight=10, random_state=42, eval_metric="logloss", verbosity=0,
+            ),
+        }
+
+        CALIBRATION_METHODS = ["platt", "isotonic", "temperature"]
+        
