@@ -18,6 +18,9 @@ from datetime import date, datetime
 from io import StringIO
 from typing import Optional
 
+import requests
+import cloudscraper
+
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -92,19 +95,33 @@ class BBRefCollector:
     """
     BASE_URL = "https://www.basketball-reference.com"
 
-    def __init__(self, delay: float = 3.0):
+    def __init__(self, delay: float = 3.5):
         self.delay = delay
-        self.session = requests.Session()
+        self.session = cloudscraper.create_scraper()
         self.session.headers.update({
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/91.0.4472.124 Safari/537.36"
+                "Chrome/131.0.0.0 Safari/537.36"
             ),
-            "Accept": "text/html,application/xhtml+xml",
-            "Accept-Language": "en-US,en:q=0.9",
-            "Referer": self.BASE_URL,
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;"
+                "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
+            "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
         })
+        self._max_retries = 3
 
     def _sleep(self) -> None:
         #rate limit pause between requests
@@ -112,8 +129,27 @@ class BBRefCollector:
     
     def _fetch_page(self, url: str) -> BeautifulSoup:
         #fetch webpage and return pased BeautifulSoup object
-        logger.debug("Fetching: {}", url)
-        response = self.session.get(url, timeout=30)
+        for attempt in range(1, self._max_retries + 1):
+            logger.debug("Fetching (attempt {}): {}", attempt, url)
+            response = self.session.get(url, timeout=30)
+
+            if response.status_code == 200:
+                return BeautifulSoup(response.content, "html.parser")
+
+            if response.status_code in (403, 429):
+                if attempt < self._max_retries:
+                    wait = self.delay * attempt * 2  # exponential backoff
+                    logger.warning(
+                        "Got {} from {}. Retrying in {:.0f}s (attempt {}/{})",
+                        response.status_code, url, wait, attempt, self._max_retries,
+                    )
+                    time.sleep(wait)
+                    continue
+
+            # For non-retryable errors or final attempt, raise
+            response.raise_for_status()
+
+        # Should not reach here, but just in case
         response.raise_for_status()
         return BeautifulSoup(response.content, "html.parser")
     
@@ -157,10 +193,14 @@ class BBRefCollector:
                     len(games),
                 )
             except requests.exceptions.HTTPError as e:
-                if e.response is not None and e.response.status_code == 404:
+                status = e.response.status_code if e.response is not None else None
+                if status == 404:
                     #month doesn't exist yet (future months in current season)
                     logger.deug("No schedule page for {} {}", season, month)
                     continue
+                elif status in (403, 429):
+                    logger.warning("Blocked ({}) fetching {} {}. Waiting and retrying...", status, season, month)
+                    time.sleep(10)
                 else:
                     logger.error("HTTP error fetching {} {}: {}", season, month, e)
                     raise
