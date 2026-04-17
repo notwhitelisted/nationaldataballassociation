@@ -70,7 +70,7 @@ def main():
         fake_game = pd.Series({
             "game_id": game.game_id,
             "game_date": latest_date,
-            "season": 2024,
+            "season": 2025,
             "home_team_id": home_id,
             "away_team_id": away_id,
             "home_team_abbr": game.home_abbr,
