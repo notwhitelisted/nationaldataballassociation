@@ -35,7 +35,7 @@ TEAM_NAME_TO_ABBR = {
     "Atlanta Hawks": "ATL",
     "Boston Celtics": "BOS",
     "Brooklyn Nets": "BRK",
-    "Charlotte Hornets": "CHO",
+    "Charlotte Hornets": "CHA",
     "Chicago Bulls": "CHI",
     "Cleveland Cavaliers": "CLE",
     "Dallas Mavericks": "DAL",
@@ -55,7 +55,7 @@ TEAM_NAME_TO_ABBR = {
     "Oklahoma City Thunder": "OKC",
     "Orlando Magic": "ORL",
     "Philadelphia 76ers": "PHI",
-    "Phoenix Suns": "PHO",
+    "Phoenix Suns": "PHX",
     "Portland Trail Blazers": "POR",
     "Sacramento Kings": "SAC",
     "San Antonio Spurs": "SAS",
@@ -68,11 +68,11 @@ ABBR_TO_TEAM_NAME = {v: k for k, v in TEAM_NAME_TO_ABBR.items()}
 
 # Team abbreviation to team_id mapping (matches our feature engineering)
 ABBR_TO_TEAM_ID = {
-    "ATL": 1, "BOS": 2, "BRK": 3, "CHO": 4, "CHI": 5,
+    "ATL": 1, "BOS": 2, "BRK": 3, "CHA": 4, "CHI": 5,
     "CLE": 6, "DAL": 7, "DEN": 8, "DET": 9, "GSW": 10,
     "HOU": 11, "IND": 12, "LAC": 13, "LAL": 14, "MEM": 15,
     "MIA": 16, "MIL": 17, "MIN": 18, "NOP": 19, "NYK": 20,
-    "OKC": 21, "ORL": 22, "PHI": 23, "PHO": 24, "POR": 25,
+    "OKC": 21, "ORL": 22, "PHI": 23, "PHX": 24, "POR": 25,
     "SAC": 26, "SAS": 27, "TOR": 28, "UTA": 29, "WAS": 30,
 }
 
@@ -356,14 +356,24 @@ class LivePredictor:
         # Calculate edge vs market
         ml_edge = None
         ml_recommendation = "No bet"
-        if game_odds.home_ml_decimal:
-            market_implied = 1.0 / game_odds.home_ml_decimal
-            ml_edge = cal_prob - market_implied
+        if game_odds.home_ml_decimal and game_odds.away_ml_decimal:
+            home_market_implied = 1.0 / game_odds.home_ml_decimal
+            away_market_implied = 1.0 / game_odds.away_ml_decimal
 
-            if ml_edge >= self.params.get("moneyline_min_edge", 0.03):
+            home_edge = cal_prob - home_market_implied
+            away_edge = (1 - cal_prob) - away_market_implied
+
+            min_edge = self.params.get("moneyline_min_edge", 0.03)
+
+            # Only bet when there's a genuine positive edge
+            if home_edge >= min_edge and home_edge > away_edge:
+                ml_edge = home_edge
                 ml_recommendation = f"Bet {game_odds.home_abbr} ML"
-            elif (1 - cal_prob) - (1 - market_implied) >= self.params.get("moneyline_min_edge", 0.03):
+            elif away_edge >= min_edge and away_edge > home_edge:
+                ml_edge = away_edge
                 ml_recommendation = f"Bet {game_odds.away_abbr} ML"
+            else:
+                ml_edge = home_edge  # show home edge by default, no bet
 
         # ── Spread Prediction ────────────────────────────────────────
         X_sp = self.spread_scaler.transform(X)
