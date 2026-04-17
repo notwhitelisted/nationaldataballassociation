@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "nationaldataballassociation"
+version = "0.1.0"
+description = "NBA sports betting and DFS prediction system using calibration-optimized ML"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Aaron Tang", email = "aarontang@csu.fullerton.edu"},
+]
+
+dependencies = [
+    # Data collection
+    "nba_api>=1.4",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+
+    # Data processing
+    "pandas>=2.1",
+    "numpy>=1.26",
+
+    # ML & calibration
+    "scikit-learn>=1.4",
+    "xgboost>=2.0",
+    "lightgbm>=4.2",
+    "shap>=0.44",
+
+    # Configuration
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "python-dotenv>=1.0",
+
+    # Utilities
+    "tqdm>=4.66",
+    "loguru>=0.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "black>=24.0",
+    "ruff>=0.2",
+    "mypy>=1.8",
+    "ipykernel>=6.28",
+    "jupyter>=1.0",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+]
+api = [
+    "fastapi>=0.109",
+    "uvicorn[standard]>=0.27",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg2-binary>=2.9",
+    "redis>=5.0",
+    "passlib[bcrypt]>=1.7",
+    "python-jose[cryptography]>=3.3",
+]
+optimization = [
+    "pulp>=2.7",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=app --cov-report=term-missing"
