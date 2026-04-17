@@ -292,7 +292,7 @@ class EnhancedFeatureBuilder:
     All features use only data available BEFORE each game (no data leakage).
     """
 
-    WINDOWS = [3, 5, 10, 15]
+    WINDOWS = [3, 5, 10, 15, 20, 30]
 
     def __init__(self, games_df: pd.DataFrame, scrape_four_factors: bool = False):
         """

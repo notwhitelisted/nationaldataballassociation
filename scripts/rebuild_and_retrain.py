@@ -17,7 +17,7 @@ def main():
     games = pd.concat(all_seasons, ignore_index=True)
     logger.info("Total games: {}", len(games))
 
-    builder = EnhancedFeatureBuilder(games, scrape_four_factors=False)
+    builder = EnhancedFeatureBuilder(games, scrape_four_factors=True)
     features = builder.build()
     logger.info("Feature matrix: {}", features.shape)
 

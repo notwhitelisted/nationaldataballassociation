@@ -365,15 +365,18 @@ class LivePredictor:
 
             min_edge = self.params.get("moneyline_min_edge", 0.03)
 
-            # Only bet when there's a genuine positive edge
-            if home_edge >= min_edge and home_edge > away_edge:
+            # Filter out heavy underdogs — don't bet on teams with +250 or worse odds
+            home_is_heavy_dog = game_odds.home_ml is not None and game_odds.home_ml >= 250
+            away_is_heavy_dog = game_odds.away_ml is not None and game_odds.away_ml >= 250
+
+            if home_edge >= min_edge and home_edge > away_edge and not home_is_heavy_dog:
                 ml_edge = home_edge
                 ml_recommendation = f"Bet {game_odds.home_abbr} ML"
-            elif away_edge >= min_edge and away_edge > home_edge:
+            elif away_edge >= min_edge and away_edge > home_edge and not away_is_heavy_dog:
                 ml_edge = away_edge
                 ml_recommendation = f"Bet {game_odds.away_abbr} ML"
             else:
-                ml_edge = home_edge  # show home edge by default, no bet
+                ml_edge = home_edge
 
         # ── Spread Prediction ────────────────────────────────────────
         X_sp = self.spread_scaler.transform(X)
@@ -383,22 +386,26 @@ class LivePredictor:
         spread_recommendation = "No bet"
         if game_odds.spread is not None:
             spread_edge = predicted_margin - game_odds.spread
-            min_spread_edge = self.params.get("spread_min_edge", 4.0)
-            ml_conf_threshold = self.params.get("spread_ml_confidence", 0.75)
+            min_spread_edge = self.params.get("spread_min_edge", 3.0)
+            ml_conf_threshold = self.params.get("spread_ml_confidence", 0.55)
 
-            if abs(spread_edge) >= min_spread_edge:
-                if spread_edge > 0 and cal_prob >= ml_conf_threshold:
-                    spread_recommendation = f"Bet {game_odds.home_abbr} -{abs(game_odds.spread)}"
-                elif spread_edge < 0 and (1 - cal_prob) >= ml_conf_threshold:
-                    spread_recommendation = f"Bet {game_odds.away_abbr} +{abs(game_odds.spread)}"
+            if spread_edge >= min_spread_edge:
+                spread_recommendation = f"Bet {game_odds.home_abbr} {game_odds.spread:+.1f}"
+            elif spread_edge <= -min_spread_edge:
+                spread_recommendation = f"Bet {game_odds.away_abbr} +{abs(game_odds.spread)}"
 
         # ── Totals Prediction ────────────────────────────────────────
         predicted_total = float(self.totals_model.predict(X_sp)[0])
 
         totals_edge = None
-        totals_recommendation = "No bet (market too efficient)"
+        totals_recommendation = "No bet"
         if game_odds.total is not None:
             totals_edge = predicted_total - game_odds.total
+            # Only recommend totals with large edge (8+ points)
+            if totals_edge >= 8.0:
+                totals_recommendation = f"Bet OVER {game_odds.total}"
+            elif totals_edge <= -8.0:
+                totals_recommendation = f"Bet UNDER {game_odds.total}"
 
         return {
             "game_id": game_odds.game_id,
