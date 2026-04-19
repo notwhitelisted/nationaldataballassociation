@@ -426,14 +426,20 @@ class LivePredictor:
             # Spread
             "predicted_margin": round(predicted_margin, 1),
             "book_spread": game_odds.spread,
+            "spread_odds_home": game_odds.spread_odds_home,
+            "spread_odds_away": game_odds.spread_odds_away,
             "spread_edge": round(spread_edge, 1) if spread_edge else None,
             "spread_recommendation": spread_recommendation,
+            "spread_bookmaker": game_odds.spread_bookmaker,
 
             # Totals
             "predicted_total": round(predicted_total, 1),
             "book_total": game_odds.total,
+            "over_odds": game_odds.over_odds,
+            "under_odds": game_odds.under_odds,
             "totals_edge": round(totals_edge, 1) if totals_edge else None,
             "totals_recommendation": totals_recommendation,
+            "totals_bookmaker": game_odds.totals_bookmaker,
         }
 
     def print_predictions(self, predictions: list[dict]) -> None:

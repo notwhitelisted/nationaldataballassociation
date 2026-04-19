@@ -497,7 +497,12 @@ if page == "Today's Predictions":
                     st.markdown("**Spread**")
                     st.metric(label=f"{p['home_abbr']} Predicted Margin", value=f"{p['predicted_margin']:+.1f}")
                     if p["book_spread"] is not None:
-                        st.caption(f"Line: {p['home_abbr']} {p['book_spread']:+.1f}")
+                        home_odds = p.get('spread_odds_home')
+                        away_odds = p.get('spread_odds_away')
+                        odds_str = ""
+                        if home_odds and away_odds:
+                            odds_str = f" ({home_odds:+d}/{away_odds:+d})"
+                        st.caption(f"Line: {p['home_abbr']} {p['book_spread']:+.1f}{odds_str}")
                     if p["spread_edge"] is not None:
                         st.caption(f"Edge: {p['spread_edge']:+.1f} points")
                     if "Bet" in p["spread_recommendation"]:
@@ -509,7 +514,12 @@ if page == "Today's Predictions":
                     st.markdown("**Totals**")
                     st.metric(label="Predicted Total", value=f"{p['predicted_total']:.1f}")
                     if p["book_total"] is not None:
-                        st.caption(f"Line: O/U {p['book_total']}")
+                        over_odds = p.get('over_odds')
+                        under_odds = p.get('under_odds')
+                        odds_str = ""
+                        if over_odds and under_odds:
+                            odds_str = f" (O {over_odds:+d} / U {under_odds:+d})"
+                        st.caption(f"Line: O/U {p['book_total']}{odds_str}")
                     if p["totals_edge"] is not None:
                         direction = "OVER" if p["totals_edge"] > 0 else "UNDER"
                         st.caption(f"Edge: {abs(p['totals_edge']):.1f} pts {direction}")
@@ -816,7 +826,7 @@ elif page == "About":
     ### Core Thesis
     Calibration-optimized machine learning models produce higher betting ROI than
     accuracy-optimized models (Walsh & Joshi, 2024). A model that says a team has
-    a 70% chance of winning should win roughly 70% of the time — when this holds,
+    a 70% chance of winning should win roughly 70% of the time when this holds,
     bettors can size wagers optimally using the Kelly Criterion.
 
     ### System Architecture
