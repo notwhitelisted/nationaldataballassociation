@@ -497,12 +497,13 @@ if page == "Today's Predictions":
                     st.markdown("**Spread**")
                     st.metric(label=f"{p['home_abbr']} Predicted Margin", value=f"{p['predicted_margin']:+.1f}")
                     if p["book_spread"] is not None:
+                        home_spread = p['book_spread']
+                        away_spread = -home_spread
                         home_odds = p.get('spread_odds_home')
                         away_odds = p.get('spread_odds_away')
-                        odds_str = ""
-                        if home_odds and away_odds:
-                            odds_str = f" ({home_odds:+d}/{away_odds:+d})"
-                        st.caption(f"Line: {p['home_abbr']} {p['book_spread']:+.1f}{odds_str}")
+                        h_odds_str = f" ({home_odds:+d})" if home_odds else ""
+                        a_odds_str = f" ({away_odds:+d})" if away_odds else ""
+                        st.caption(f"{p['home_abbr']} {home_spread:+.1f}{h_odds_str}  |  {p['away_abbr']} {away_spread:+.1f}{a_odds_str}")
                     if p["spread_edge"] is not None:
                         st.caption(f"Edge: {p['spread_edge']:+.1f} points")
                     if "Bet" in p["spread_recommendation"]:
