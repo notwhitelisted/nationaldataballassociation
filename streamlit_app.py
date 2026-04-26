@@ -504,8 +504,8 @@ if page == "Today's Predictions":
                         h_odds_str = f" ({home_odds:+d})" if home_odds else ""
                         a_odds_str = f" ({away_odds:+d})" if away_odds else ""
                         st.caption(f"{p['home_abbr']} {home_spread:+.1f}{h_odds_str}  |  {p['away_abbr']} {away_spread:+.1f}{a_odds_str}")
-                    if p["spread_edge"] is not None:
-                        st.caption(f"Edge: {p['spread_edge']:+.1f} points")
+                    if p.get("spread_edge_abs") is not None:
+                        st.caption(f"Edge: {p['spread_edge_abs']:.1f} points")
                     if "Bet" in p["spread_recommendation"]:
                         st.success(f"✅ {p['spread_recommendation']}")
                     else:
