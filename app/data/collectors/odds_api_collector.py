@@ -392,7 +392,8 @@ class LivePredictor:
             if spread_edge >= min_spread_edge:
                 spread_recommendation = f"Bet {game_odds.home_abbr} {game_odds.spread:+.1f}"
             elif spread_edge <= -min_spread_edge:
-                spread_recommendation = f"Bet {game_odds.away_abbr} +{abs(game_odds.spread)}"
+                away_spread = -game_odds.spread
+                spread_recommendation = f"Bet {game_odds.away_abbr} {away_spread:+.1f}"
 
         # ── Totals Prediction ────────────────────────────────────────
         predicted_total = float(self.totals_model.predict(X_sp)[0])
@@ -428,7 +429,8 @@ class LivePredictor:
             "book_spread": game_odds.spread,
             "spread_odds_home": game_odds.spread_odds_home,
             "spread_odds_away": game_odds.spread_odds_away,
-            "spread_edge": round(spread_edge, 1) if spread_edge else None,
+            "spread_edge": round(spread_edge, 1) if spread_edge is not None else None,
+            "spread_edge_abs": round(abs(spread_edge), 1) if spread_edge is not None else None,
             "spread_recommendation": spread_recommendation,
             "spread_bookmaker": game_odds.spread_bookmaker,
 
