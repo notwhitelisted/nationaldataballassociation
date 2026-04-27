@@ -116,6 +116,19 @@ def main():
         # Adjust predicted margin
         original_margin = prediction["predicted_margin"]
         prediction["predicted_margin_adjusted"] = round(original_margin + adj["spread_adjustment"], 1)
+        # Recalculate spread recommendation with adjusted margin
+        if prediction["book_spread"] is not None:
+            adjusted_spread_edge = prediction["predicted_margin_adjusted"] - prediction["book_spread"]
+            prediction["spread_edge"] = round(adjusted_spread_edge, 1)
+            min_spread_edge = 3.0
+            
+            if adjusted_spread_edge >= min_spread_edge:
+                prediction["spread_recommendation"] = f"Bet {game.home_abbr} {prediction['book_spread']:+.1f}"
+            elif adjusted_spread_edge <= -min_spread_edge:
+                away_spread = -prediction["book_spread"]
+                prediction["spread_recommendation"] = f"Bet {game.away_abbr} {away_spread:+.1f}"
+            else:
+                prediction["spread_recommendation"] = "No bet"
         
         predictions.append(prediction)
 

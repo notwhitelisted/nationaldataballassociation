@@ -488,7 +488,8 @@ class LivePredictor:
 
             # Spread
             print(f"  SPREAD:")
-            print(f"    Model: {p['home_abbr']} by {p['predicted_margin']:+.1f} points")
+            adj_margin = p.get('predicted_margin_adjusted', p['predicted_margin'])
+            print(f"    Model: {p['home_abbr']} by {adj_margin:+.1f} points")
             if p['book_spread'] is not None:
                 print(f"    Line: {p['home_abbr']} {p['book_spread']:+.1f}")
             if p['spread_edge'] is not None:
