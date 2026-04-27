@@ -472,6 +472,17 @@ class LivePredictor:
             if p['ml_edge']:
                 edge_pct = p['ml_edge'] * 100
                 print(f"    Edge: {edge_pct:+.1f}%")
+            # Show injury adjustments if available
+            adj = p.get("injury_adjustment")
+            if adj and (adj["home_out"] or adj["away_out"]):
+                if adj["home_out"]:
+                    print(f"    ⚠️  {p['home_abbr']} missing: {', '.join(adj['home_out'][:3])}")
+                if adj["away_out"]:
+                    print(f"    ⚠️  {p['away_abbr']} missing: {', '.join(adj['away_out'][:3])}")
+                if abs(adj["prob_adjustment"]) >= 0.01:
+                    orig = p.get("home_win_prob_calibrated", 0) * 100
+                    adjusted = p.get("home_win_prob_adjusted", p.get("home_win_prob_calibrated", 0)) * 100
+                    print(f"    📊 Adjusted: {p['home_abbr']} {orig:.1f}% → {adjusted:.1f}%")
             marker = " <<<" if "Bet" in p['ml_recommendation'] else ""
             print(f"    >>> {p['ml_recommendation']}{marker}")
 

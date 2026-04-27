@@ -15,6 +15,7 @@ from app.data.storage import DataStore
 from app.ml.features.enhanced_features import EnhancedFeatureBuilder
 from app.data.collectors.odds_api_collector import OddsAPICollector, LivePredictor
 from app.utils import logger
+from pathlib import Path
 
 
 # Your API key — you can also move this to .env later
@@ -36,6 +37,17 @@ def main():
 
     # Build features with Elo (skip four factors scraping for speed)
     builder = EnhancedFeatureBuilder(all_games, scrape_four_factors=False)
+    # Load injury data and player impact
+    from app.data.collectors.injury_collector import InjuryCollector
+    injury_collector = InjuryCollector()
+    
+    impact_path = Path("data/processed/player_impact_2025.parquet")
+    if impact_path.exists():
+        impact_df = pd.read_parquet(impact_path)
+        logger.info("Loaded player impact data: {} players", len(impact_df))
+    else:
+        impact_df = pd.DataFrame()
+        logger.warning("No player impact data found — run: python -m scripts.player_impact --seasons 2025 --analyze")
 
     # ── Load saved models ────────────────────────────────────────────
     predictor = LivePredictor()
@@ -89,7 +101,22 @@ def main():
             continue
 
         # Generate prediction
+        # Generate prediction
         prediction = predictor.predict_game(game, features)
+
+        # Apply injury adjustments
+        adj = injury_collector.get_game_adjustment(game.home_abbr, game.away_abbr, impact_df)
+        prediction["injury_adjustment"] = adj
+        
+        # Adjust calibrated probability
+        original_prob = prediction["home_win_prob_calibrated"]
+        adjusted_prob = max(0.05, min(0.95, original_prob + adj["prob_adjustment"]))
+        prediction["home_win_prob_adjusted"] = round(adjusted_prob, 4)
+        
+        # Adjust predicted margin
+        original_margin = prediction["predicted_margin"]
+        prediction["predicted_margin_adjusted"] = round(original_margin + adj["spread_adjustment"], 1)
+        
         predictions.append(prediction)
 
     # ── Display results ──────────────────────────────────────────────
