@@ -16,7 +16,7 @@ import plotly.express as px
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
-#Page Config 
+# ── Page Config ──────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="National Databall Association",
     page_icon="🏀",
@@ -24,7 +24,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-#Sidebar Navigation 
+# ── Sidebar Navigation ──────────────────────────────────────────────────
 st.sidebar.title("🏀 National Databall Association")
 st.sidebar.caption("NBA Prediction System — Calibration-Optimized ML")
 
@@ -33,7 +33,7 @@ page = st.sidebar.radio(
     ["Today's Predictions", "Model Comparison", "Backtesting", "Elo Rankings", "Bet Tracker", "About"],
 )
 
-#Helper Functions 
+# ── Helper Functions ─────────────────────────────────────────────────────
 
 @st.cache_data(ttl=300)
 def load_strategy_params():
@@ -92,10 +92,11 @@ def american_to_decimal(odds: int) -> float:
 
 
 def get_predictions():
-    """Run the prediction pipeline and return results."""
+    """Run the prediction pipeline with injury adjustments."""
     from app.data.storage import DataStore
     from app.ml.features.enhanced_features import EnhancedFeatureBuilder
     from app.data.collectors.odds_api_collector import OddsAPICollector, LivePredictor
+    from app.data.collectors.injury_collector import InjuryCollector
 
     store = DataStore()
     all_seasons = []
@@ -113,8 +114,17 @@ def get_predictions():
     if not odds_games:
         return [], collector.remaining_requests
 
+    # Load injury data
+    injury_collector = InjuryCollector()
+    impact_path = Path("data/processed/player_impact_2025.parquet")
+    impact_df = pd.read_parquet(impact_path) if impact_path.exists() else pd.DataFrame()
+
     predictions = []
     for game in odds_games:
+        # Skip live/in-progress games
+        if game.spread is not None and abs(game.spread) > 20:
+            continue
+
         home_matches = all_games[all_games["home_team_abbr"] == game.home_abbr]
         away_matches = all_games[all_games["away_team_abbr"] == game.away_abbr]
 
@@ -143,12 +153,39 @@ def get_predictions():
             continue
 
         prediction = predictor.predict_game(game, features)
+
+        # Apply injury adjustments
+        adj = injury_collector.get_game_adjustment(game.home_abbr, game.away_abbr, impact_df)
+        prediction["injury_adjustment"] = adj
+
+        # Adjust probability
+        original_prob = prediction["home_win_prob_calibrated"]
+        adjusted_prob = max(0.05, min(0.95, original_prob + adj["prob_adjustment"]))
+        prediction["home_win_prob_adjusted"] = round(adjusted_prob, 4)
+
+        # Adjust margin
+        original_margin = prediction["predicted_margin"]
+        prediction["predicted_margin_adjusted"] = round(original_margin + adj["spread_adjustment"], 1)
+
+        # Recalculate spread recommendation with adjusted margin
+        if prediction["book_spread"] is not None:
+            adjusted_spread_edge = prediction["predicted_margin_adjusted"] - prediction["book_spread"]
+            prediction["spread_edge"] = round(adjusted_spread_edge, 1)
+            min_spread_edge = 3.0
+            if adjusted_spread_edge >= min_spread_edge:
+                prediction["spread_recommendation"] = f"Bet {game.home_abbr} {prediction['book_spread']:+.1f}"
+            elif adjusted_spread_edge <= -min_spread_edge:
+                away_spread = -prediction["book_spread"]
+                prediction["spread_recommendation"] = f"Bet {game.away_abbr} {away_spread:+.1f}"
+            else:
+                prediction["spread_recommendation"] = "No bet"
+
         predictions.append(prediction)
 
     return predictions, collector.remaining_requests
 
 
-#Chart Helper Functions 
+# ── Chart Helper Functions ───────────────────────────────────────────────
 
 def create_reliability_diagram():
     """Create a reliability diagram showing calibration quality."""
@@ -156,15 +193,15 @@ def create_reliability_diagram():
     # In production this would come from the actual test set predictions
     bins = np.array([0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95])
 
-    #Uncalibrated model (overconfident)
+    # Uncalibrated model (overconfident)
     uncal_acc = np.array([0.08, 0.18, 0.22, 0.32, 0.42, 0.52, 0.58, 0.68, 0.76, 0.88])
 
-    #Calibrated model (closer to diagonal)
+    # Calibrated model (closer to diagonal)
     cal_acc = np.array([0.06, 0.16, 0.24, 0.34, 0.44, 0.54, 0.64, 0.73, 0.83, 0.93])
 
     fig = go.Figure()
 
-    #Perfect calibration line
+    # Perfect calibration line
     fig.add_trace(go.Scatter(
         x=[0, 1], y=[0, 1],
         mode="lines",
@@ -172,7 +209,7 @@ def create_reliability_diagram():
         line=dict(dash="dash", color="gray", width=1),
     ))
 
-    #Uncalibrated
+    # Uncalibrated
     fig.add_trace(go.Scatter(
         x=bins, y=uncal_acc,
         mode="lines+markers",
@@ -181,7 +218,7 @@ def create_reliability_diagram():
         marker=dict(size=8),
     ))
 
-    #Calibrated
+    # Calibrated
     fig.add_trace(go.Scatter(
         x=bins, y=cal_acc,
         mode="lines+markers",
@@ -209,15 +246,15 @@ def create_bankroll_chart():
     n_bets = 302
     starting = 1000
 
-    #Simulate realistic bankroll curve ending at ~$3,514
+    # Simulate realistic bankroll curve ending at ~$3,514
     bankroll = [starting]
     current = starting
     target_end = 3514
 
     for i in range(n_bets):
-        #Mix of wins and losses to get ~57.9% win rate
+        # Mix of wins and losses to get ~57.9% win rate
         if np.random.random() < 0.579:
-            #Win — average payout varies with odds
+            # Win — average payout varies with odds
             payout = 10 * np.random.uniform(0.5, 2.5)
             current += payout
         else:
@@ -226,7 +263,7 @@ def create_bankroll_chart():
         # Add some noise
         bankroll.append(current)
 
-    #Scale to match actual ending bankroll
+    # Scale to match actual ending bankroll
     bankroll = np.array(bankroll)
     bankroll = starting + (bankroll - starting) * (target_end - starting) / (bankroll[-1] - starting)
 
@@ -242,7 +279,7 @@ def create_bankroll_chart():
         fillcolor="rgba(29, 158, 117, 0.1)",
     ))
 
-    #Starting line
+    # Starting line
     fig.add_hline(y=starting, line_dash="dash", line_color="gray",
                   annotation_text="Starting bankroll: $1,000")
 
@@ -270,17 +307,17 @@ def create_feature_importance_chart():
                   0.045, 0.042, 0.038, 0.035, 0.032, 0.028,
                   0.026, 0.024, 0.021]
 
-    #Color by category
+    # Color by category
     colors = []
     for f in features:
         if "elo" in f:
-            colors.append("#534AB7")  #purple for Elo
+            colors.append("#534AB7")  # purple for Elo
         elif "rtg" in f or "srs" in f:
-            colors.append("#1D9E75")  #teal for Four Factors
+            colors.append("#1D9E75")  # teal for Four Factors
         elif "momentum" in f or "streak" in f:
-            colors.append("#D85A30")  #coral for momentum
+            colors.append("#D85A30")  # coral for momentum
         else:
-            colors.append("#378ADD")  #blue for rolling stats
+            colors.append("#378ADD")  # blue for rolling stats
 
     fig = go.Figure()
 
@@ -451,7 +488,10 @@ def create_spread_sweep_chart():
     )
     return fig
 
-#PAGE 1: TODAY'S PREDICTIONS
+
+# ══════════════════════════════════════════════════════════════════════════
+# PAGE 1: TODAY'S PREDICTIONS
+# ══════════════════════════════════════════════════════════════════════════
 
 if page == "Today's Predictions":
     st.title("Today's NBA Predictions")
@@ -478,12 +518,49 @@ if page == "Today's Predictions":
                 st.markdown(f"### {p['away_team']} @ {p['home_team']}")
                 st.caption(time_str)
 
+                # Injury banner
+                adj = p.get("injury_adjustment", {})
+                home_out = adj.get("home_out", [])
+                away_out = adj.get("away_out", [])
+                if home_out or away_out:
+                    injury_lines = []
+                    if home_out:
+                        details = adj.get("home_missing_details", [])
+                        for player in home_out[:4]:
+                            impact_str = ""
+                            for d in details:
+                                if d["name"] == player:
+                                    impact_str = f" ({d['margin_impact']:+.1f} impact)"
+                            injury_lines.append(f"🔴 **{p['home_abbr']}** — {player}{impact_str}")
+                    if away_out:
+                        details = adj.get("away_missing_details", [])
+                        for player in away_out[:4]:
+                            impact_str = ""
+                            for d in details:
+                                if d["name"] == player:
+                                    impact_str = f" ({d['margin_impact']:+.1f} impact)"
+                            injury_lines.append(f"🔴 **{p['away_abbr']}** — {player}{impact_str}")
+                    st.warning("**Injuries:**  \n" + "  \n".join(injury_lines))
+
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
                     st.markdown("**Moneyline**")
-                    prob_pct = p["home_win_prob_calibrated"] * 100
-                    st.metric(label=f"{p['home_abbr']} Win Prob", value=f"{prob_pct:.1f}%")
+                    # Show adjusted probability if available
+                    adjusted_prob = p.get("home_win_prob_adjusted", p["home_win_prob_calibrated"])
+                    raw_prob = p["home_win_prob_calibrated"]
+                    prob_pct = adjusted_prob * 100
+                    raw_pct = raw_prob * 100
+
+                    if abs(adjusted_prob - raw_prob) > 0.01:
+                        st.metric(
+                            label=f"{p['home_abbr']} Win Prob (injury-adjusted)",
+                            value=f"{prob_pct:.1f}%",
+                            delta=f"{(adjusted_prob - raw_prob) * 100:+.1f}% from {raw_pct:.1f}%",
+                        )
+                    else:
+                        st.metric(label=f"{p['home_abbr']} Win Prob", value=f"{prob_pct:.1f}%")
+
                     if p["home_ml"]:
                         st.caption(f"Market: {p['home_abbr']} {p['home_ml']:+d} | {p['away_abbr']} {p['away_ml']:+d}")
                     if p["ml_edge"]:
@@ -495,17 +572,28 @@ if page == "Today's Predictions":
 
                 with col2:
                     st.markdown("**Spread**")
-                    st.metric(label=f"{p['home_abbr']} Predicted Margin", value=f"{p['predicted_margin']:+.1f}")
+                    adj_margin = p.get("predicted_margin_adjusted", p["predicted_margin"])
+                    raw_margin = p["predicted_margin"]
+
+                    if abs(adj_margin - raw_margin) > 0.1:
+                        st.metric(
+                            label=f"{p['home_abbr']} Predicted Margin (adjusted)",
+                            value=f"{adj_margin:+.1f}",
+                            delta=f"{adj_margin - raw_margin:+.1f} from injury data",
+                        )
+                    else:
+                        st.metric(label=f"{p['home_abbr']} Predicted Margin", value=f"{adj_margin:+.1f}")
+
                     if p["book_spread"] is not None:
-                        home_spread = p['book_spread']
+                        home_spread = p["book_spread"]
                         away_spread = -home_spread
-                        home_odds = p.get('spread_odds_home')
-                        away_odds = p.get('spread_odds_away')
+                        home_odds = p.get("spread_odds_home")
+                        away_odds = p.get("spread_odds_away")
                         h_odds_str = f" ({home_odds:+d})" if home_odds else ""
                         a_odds_str = f" ({away_odds:+d})" if away_odds else ""
-                        st.caption(f"{p['home_abbr']} {home_spread:+.1f}{h_odds_str}  |  {p['away_abbr']} {away_spread:+.1f}{a_odds_str}")
-                    if p.get("spread_edge_abs") is not None:
-                        st.caption(f"Edge: {p['spread_edge_abs']:.1f} points")
+                        st.caption(f"{p['home_abbr']} {home_spread:+.1f}{h_odds_str} | {p['away_abbr']} {away_spread:+.1f}{a_odds_str}")
+                    if p["spread_edge"] is not None:
+                        st.caption(f"Edge: {p['spread_edge']:+.1f} points")
                     if "Bet" in p["spread_recommendation"]:
                         st.success(f"✅ {p['spread_recommendation']}")
                     else:
@@ -515,8 +603,8 @@ if page == "Today's Predictions":
                     st.markdown("**Totals**")
                     st.metric(label="Predicted Total", value=f"{p['predicted_total']:.1f}")
                     if p["book_total"] is not None:
-                        over_odds = p.get('over_odds')
-                        under_odds = p.get('under_odds')
+                        over_odds = p.get("over_odds")
+                        under_odds = p.get("under_odds")
                         odds_str = ""
                         if over_odds and under_odds:
                             odds_str = f" (O {over_odds:+d} / U {under_odds:+d})"
@@ -544,13 +632,16 @@ if page == "Today's Predictions":
     else:
         st.info("Click **Fetch Live Predictions** to load today's games and odds.")
 
-#PAGE 2: MODEL COMPARISON
+
+# ══════════════════════════════════════════════════════════════════════════
+# PAGE 2: MODEL COMPARISON
+# ══════════════════════════════════════════════════════════════════════════
 
 elif page == "Model Comparison":
     st.title("Model Comparison")
     st.caption("Performance across Logistic Regression, Random Forest, and XGBoost")
 
-    #Charts
+    # Charts
     tab1, tab2, tab3 = st.tabs(["Performance", "Feature Impact", "Calibration"])
 
     with tab1:
@@ -601,7 +692,10 @@ elif page == "Model Comparison":
                 "This means when the model predicts 65% win probability, "
                 "the team actually wins ~65% of the time.")
 
-#PAGE 3: BACKTESTING
+
+# ══════════════════════════════════════════════════════════════════════════
+# PAGE 3: BACKTESTING
+# ══════════════════════════════════════════════════════════════════════════
 
 elif page == "Backtesting":
     st.title("Backtesting Results")
@@ -661,7 +755,10 @@ elif page == "Backtesting":
                 "Better-calibrated probabilities lead to more accurate edge identification "
                 "and more selective bet placement.")
 
-#PAGE 4: ELO RANKINGS
+
+# ══════════════════════════════════════════════════════════════════════════
+# PAGE 4: ELO RANKINGS
+# ══════════════════════════════════════════════════════════════════════════
 
 elif page == "Elo Rankings":
     st.title("Current NBA Elo Power Rankings")
@@ -680,7 +777,7 @@ elif page == "Elo Rankings":
     ratings = ratings.dropna(subset=["team_abbr"]).reset_index(drop=True)
     ratings["rank"] = range(1, len(ratings) + 1)
 
-    #Color by tier
+    # Color by tier
     def get_tier_color(elo):
         if elo >= 1650:
             return "#1D9E75"  # elite
@@ -716,7 +813,7 @@ elif page == "Elo Rankings":
 
     st.plotly_chart(fig, use_container_width=True)
 
-    #Legend
+    # Legend
     lcol1, lcol2, lcol3, lcol4 = st.columns(4)
     lcol1.markdown("🟢 **Elite** (1650+)")
     lcol2.markdown("🔵 **Good** (1550-1649)")
@@ -734,7 +831,9 @@ elif page == "Elo Rankings":
                f"Season regression: 25% toward mean.")
 
 
-#PAGE 5: BET TRACKER
+# ══════════════════════════════════════════════════════════════════════════
+# PAGE 5: BET TRACKER
+# ══════════════════════════════════════════════════════════════════════════
 
 elif page == "Bet Tracker":
     st.title("Personal Bet Tracker")
@@ -748,7 +847,7 @@ elif page == "Bet Tracker":
         resolved = df[df["result"].isin(["win", "loss", "push"])] if "result" in df.columns else pd.DataFrame()
         pending = df[df["result"] == "pending"] if "result" in df.columns else df
 
-        #Summary metrics
+        # Summary metrics
         if len(resolved) > 0:
             wins = len(resolved[resolved["result"] == "win"])
             losses = len(resolved[resolved["result"] == "loss"])
@@ -762,7 +861,7 @@ elif page == "Bet Tracker":
             bcol3.metric("Units Profit", f"{total_profit:+.2f}")
             bcol4.metric("ROI", f"{(total_profit / total_wagered * 100):+.1f}%" if total_wagered > 0 else "—")
 
-            #Cumulative profit chart
+            # Cumulative profit chart
             if "units_profit" in resolved.columns:
                 resolved_sorted = resolved.sort_values("date").reset_index(drop=True)
                 resolved_sorted["cumulative_profit"] = resolved_sorted["units_profit"].astype(float).cumsum()
@@ -787,7 +886,7 @@ elif page == "Bet Tracker":
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-            #By bet type
+            # By bet type
             st.subheader("Performance by Bet Type")
             for bet_type in ["moneyline", "spread", "totals"]:
                 type_bets = resolved[resolved["bet_type"] == bet_type] if "bet_type" in resolved.columns else pd.DataFrame()
@@ -809,7 +908,9 @@ elif page == "Bet Tracker":
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 
-#PAGE 6: ABOUT
+# ══════════════════════════════════════════════════════════════════════════
+# PAGE 6: ABOUT
+# ══════════════════════════════════════════════════════════════════════════
 
 elif page == "About":
     st.title("About This Project")
@@ -818,16 +919,16 @@ elif page == "About":
     ### National Databall Association
     **Machine Learning Techniques for Sports Betting Prediction System**
 
-    *CPSC 597: Project Seminar - California State University, Fullerton*
+    *CPSC 597: Project Seminar — California State University, Fullerton*
 
-    *Aaron Tang | Professor: Dr. Duy H. Ho | May 2026*
+    *Aaron Tang | Supervisor: Dr. Duy H. Ho | May 2026*
 
     ---
 
     ### Core Thesis
     Calibration-optimized machine learning models produce higher betting ROI than
     accuracy-optimized models (Walsh & Joshi, 2024). A model that says a team has
-    a 70% chance of winning should win roughly 70% of the time when this holds,
+    a 70% chance of winning should win roughly 70% of the time — when this holds,
     bettors can size wagers optimally using the Kelly Criterion.
 
     ### System Architecture
