@@ -927,30 +927,54 @@ elif page == "About":
 
     ### Core Thesis
     Calibration-optimized machine learning models produce higher betting ROI than
-    accuracy-optimized models (Walsh & Joshi, 2024). A model that says a team has
-    a 70% chance of winning should win roughly 70% of the time — when this holds,
-    bettors can size wagers optimally using the Kelly Criterion.
+    accuracy-optimized models (Walsh & Joshi, 2024). When a model's predicted probabilities
+    accurately reflect real-world outcomes, the Kelly Criterion can optimally size bets
+    to maximize long-term bankroll growth.
 
     ### System Architecture
     - **Data:** 8,784 games across 7 NBA seasons (2019-2025) from Basketball Reference and NBA API
-    - **Features:** 297 features including rolling team stats (L3-L30), Elo ratings, and Dean Oliver's Four Factors
-    - **Models:** Logistic Regression, Random Forest, XGBoost for moneyline, spread, and totals
-    - **Calibration:** Platt scaling, isotonic regression, temperature scaling
-    - **Live Odds:** The Odds API for real-time moneyline, spread, and totals
+    - **Player Data:** 25,923 game logs for 516 active players; 343 players analyzed for impact scoring
+    - **Features:** 297 features across 4 iterations — rolling stats (L3-L30), Elo ratings, Dean Oliver's Four Factors, momentum, streaks, and scheduling
+    - **Models:** Logistic Regression, Random Forest, XGBoost for moneyline (classification), spread, and totals (regression)
+    - **Calibration:** Platt scaling, isotonic regression, temperature scaling — reduces ECE by 30-44%
+    - **Injury Integration:** Real-time injury scraping from Basketball Reference with player impact adjustments
+    - **Live Odds:** The Odds API for real-time moneyline, spread, and totals from DraftKings and FanDuel
 
     ### Key Results
-    | Bet Type | Best Model | Metric | ROI |
-    |----------|-----------|--------|-----|
-    | Moneyline | Random Forest | 71.0% accuracy | +83.25% |
-    | Spread | RF Combined | 58.1% win rate | +10.96% |
+
+    **Backtesting (2024-25 season, real sportsbook odds):**
+    | Bet Type | Best Model | Win Rate | ROI |
+    |----------|-----------|----------|-----|
+    | Moneyline | Random Forest (71.0% accuracy) | 57.9% | +83.25% |
+    | Spread | RF Combined Strategy | 58.1% | +10.96% |
     | Totals | — | Below break-even | Not profitable |
 
+    **Live Simulated Betting (2026 NBA Playoffs):**
+    | Metric | Result |
+    |--------|--------|
+    | Record | 25W - 16L |
+    | Win Rate | 61.0% |
+    | Units Profit | +15.07 |
+    | ROI | +36.8% |
+
+    ### Feature Engineering Progression
+    | Feature Set | Count | Accuracy | AUC |
+    |------------|-------|----------|-----|
+    | Original (rolling stats) | 70 | 65.4% | 0.701 |
+    | Enhanced (+ spread/totals) | 176 | 65.3% | 0.696 |
+    | + Elo & Four Factors | 219 | 67.6% | 0.729 |
+    | + L20/L30 Windows | 297 | 71.0% | 0.766 |
+
     ### Tech Stack
-    Python, scikit-learn, XGBoost, pandas, NumPy, Streamlit, Plotly, The Odds API, Basketball Reference
+    Python, scikit-learn, XGBoost, pandas, NumPy, Streamlit, Plotly,
+    The Odds API, Basketball Reference, NBA API, cloudscraper, BeautifulSoup,
+    Apache Parquet, Pydantic, joblib
 
     ### References
     - Walsh & Joshi (2024) — Calibration vs accuracy for sports betting
     - Oliver (2004) — Basketball on Paper: Four Factors of basketball success
     - Beal et al. (2020) — DFS optimization with ML + mixed-integer programming
     - Constantinou & Papastamoulis (2024) — Player-specific modeling for NBA DFS
+    - Bunker & Susnjak (2022) — ML techniques for team sport prediction review
+    - Guo et al. (2017) — On calibration of modern neural networks
     """)

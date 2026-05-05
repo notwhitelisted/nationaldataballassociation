@@ -1,0 +1,14 @@
+streamlit
+pandas
+numpy
+plotly
+scikit-learn
+xgboost
+joblib
+cloudscraper
+beautifulsoup4
+nba_api
+requests
+pydantic
+pydantic-settings
+loguru

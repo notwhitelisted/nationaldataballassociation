@@ -16,12 +16,12 @@ env/
 .env
 
 # Data and model artifacts (large files)
-/data/
-/models/
-*.csv
-*.parquet
-*.pkl
-*.joblib
+#/data/
+#/models/
+#*.csv
+#*.parquet
+#*.pkl
+#*.joblib
 
 # Jupyter
 .ipynb_checkpoints/
