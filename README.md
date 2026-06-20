@@ -74,7 +74,7 @@ python -m app.ml.pipeline
 - **Calibration**: scikit-learn CalibratedClassifierCV, custom ECE implementation
 - **Interpretability**: SHAP
 - **Backend** (future): FastAPI, PostgreSQL
-- **Frontend** (future): React or Streamlit
+- **Frontend** : Streamlit
 
 ## References
 
